@@ -1,0 +1,10 @@
+{
+  "mode": "process",
+
+  "taxiData": [
+    "data/green_tripdata_2016-01.csv"
+  ],
+  "numTaxis": 2,
+
+  "targetSpeedPerSecond": 5000
+}
