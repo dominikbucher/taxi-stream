@@ -2,6 +2,18 @@
 
 
 [[projects]]
+  name = "github.com/cridenour/go-postgis"
+  packages = ["."]
+  revision = "07bea7123e00b49f286932473cbaf79b60d40fa5"
+  version = "v1.0.0"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/lib/pq"
+  packages = [".","oid"]
+  revision = "88edab0803230a3898347e77b474f8c1820a1f20"
+
+[[projects]]
   name = "github.com/twpayne/go-polyline"
   packages = ["."]
   revision = "ed808842d5eaad6ab3744a9eaabac44ae29d91d2"
@@ -10,6 +22,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "88310e43cb088fb9ca89d61d75f65e4f37b10cd1e696b1cb5c65dc2950a62a90"
+  inputs-digest = "56576576e0406e9ee832fd95746562e7cbb4b58f5fbca79f18385275cb44ea9a"
   solver-name = "gps-cdcl"
   solver-version = 1

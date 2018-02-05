@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS PostGIS;
+
 DROP TABLE public.taxi_routes;
 DROP TABLE public.taxi_route_steps;
 

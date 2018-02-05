@@ -10,6 +10,10 @@ import (
 	"taxistream/osrm"
 	"encoding/json"
 	"taxistream/taxisim"
+	"database/sql"
+
+	"github.com/cridenour/go-postgis"
+	_ "github.com/lib/pq"
 )
 
 // General function to panic on an error.
@@ -64,7 +68,7 @@ func processTaxiDataCSV(filename string, simulator taxisim.Simulator,
 		simulator = processRow(record, simulator)
 
 		lineCount += 1
-		if lineCount > 3 {
+		if lineCount > 100 {
 			return simulator
 		}
 	}
@@ -87,6 +91,53 @@ func processTaxiRecord(record []string, simulator taxisim.Simulator) taxisim.Sim
 	return simulator
 }
 
+// Sets up the connection to the database.
+func connectToDatabase() *sql.DB {
+	db, err := sql.Open("postgres",
+		"host=127.0.0.1 port=5432 dbname=taxi-streaming sslmode=disable user=dobucher password=dominik")
+	if err != nil {
+		panic(err)
+	}
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
+	// Ensure we have PostGIS on the table.
+	db.Exec("CREATE EXTENSION IF NOT EXISTS postgis;")
+
+	// And clean database as well.
+	db.Exec("TRUNCATE TABLE taxi_routes;")
+	return db
+}
+
+// Takes the output of a simulation run and writes it to PostGIS.
+func writeSimulatorOutputToDatabase(simulator taxisim.Simulator) {
+	db := connectToDatabase()
+	defer db.Close()
+
+	point := postgis.Point{-84.5014, 39.1064}
+	var newPoint postgis.Point
+
+	for idx, taxiMovement := range simulator.TaxiMovements {
+		_, err := db.Exec("INSERT INTO taxi_routes VALUES ($1, $2, $3, $4, $5, $6, $7, $8, "+
+			"$9, $10, $11, $12, $13, $14, $15, $16, ST_LineFromEncodedPolyline($17))",
+			idx, taxiMovement.PuTime, taxiMovement.DoTime, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+			taxiMovement.Geometry)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Demonstrate both driver.Valuer and sql.Scanner support
+	db.QueryRow("SELECT ST_GeomFromText('POINT(-71.064544 42.28787)');").Scan(&newPoint)
+
+	fmt.Println(point)
+	fmt.Println(newPoint)
+	if point == newPoint {
+		fmt.Println("Point returned equal from PostGIS!")
+	}
+}
+
 // Main function of the processing program.
 func main() {
 	conf := readConfig("config.json")
@@ -96,4 +147,6 @@ func main() {
 	simulator = processTaxiDataCSV(conf.TaxiData[0], simulator, processTaxiRecord)
 
 	fmt.Println(simulator)
+
+	writeSimulatorOutputToDatabase(simulator)
 }
