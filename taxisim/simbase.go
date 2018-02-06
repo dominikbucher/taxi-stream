@@ -61,7 +61,7 @@ type TaxiMovement struct {
 	Geometry             string
 }
 
-func ResolveRoute(puTime time.Time, puLon, puLat, doLon, doLat float64) (*Route, error) {
+func resolveRoute(puTime time.Time, puLon, puLat, doLon, doLat float64) (*Route, error) {
 	route, err := osrm.QueryOSRM(puLon, puLat, doLon, doLat)
 	if err != nil {
 		return nil, err

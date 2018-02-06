@@ -4,7 +4,7 @@
   "taxiData": [
     "data/green_tripdata_2016-01.csv"
   ],
-  "numTaxis": 10000,
+  "numTaxis": 3,
   "maxRoutes": 50000,
 
   "targetSpeedPerSecond": 5000
