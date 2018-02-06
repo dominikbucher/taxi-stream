@@ -77,9 +77,10 @@ func processTaxiRecord(record []string, simulator Simulator) Simulator {
 }
 
 // Sets up the connection to the database.
-func connectToDatabase() *sql.DB {
-	db, err := sql.Open("postgres",
-		"host=127.0.0.1 port=5432 dbname=taxi-streaming sslmode=disable user=dobucher password=dominik")
+func connectToDatabase(conf base.Configuration) *sql.DB {
+	dataSourceName := fmt.Sprintf("host=%s port=%s dbname=%s sslmode=%s user=%s password=%s",
+		conf.DbHost, conf.DbPort, conf.DbName, conf.DbSSLMode, conf.DbUser, conf.DbPassword)
+	db, err := sql.Open("postgres", dataSourceName)
 	if err != nil {
 		panic(err)
 	}
@@ -96,8 +97,8 @@ func connectToDatabase() *sql.DB {
 }
 
 // Takes the output of a simulation run and writes it to PostGIS.
-func writeSimulatorOutputToDatabase(simulator Simulator) {
-	db := connectToDatabase()
+func writeSimulatorOutputToDatabase(conf base.Configuration, simulator Simulator) {
+	db := connectToDatabase(conf)
 	defer db.Close()
 
 	for idx, taxiMovement := range simulator.TaxiMovements {
@@ -120,7 +121,8 @@ func RunSim(conf base.Configuration) {
 	simulator = processTaxiDataCSV(conf.TaxiData[0], conf.MaxRoutes, simulator, processTaxiRecord)
 
 	fmt.Println(simulator)
+	fmt.Println("Total routes:", simulator.TotalRoutes)
 	fmt.Println("Unresolved routes:", simulator.UnresolvedRoutes)
 
-	writeSimulatorOutputToDatabase(simulator)
+	writeSimulatorOutputToDatabase(conf, simulator)
 }

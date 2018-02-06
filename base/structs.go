@@ -7,4 +7,11 @@ type Configuration struct {
 	NumTaxis             int32
 	MaxRoutes            int32
 	TargetSpeedPerSecond float32
+
+	DbUser     string
+	DbPassword string
+	DbName     string
+	DbHost     string
+	DbPort     string
+	DbSSLMode  string
 }
