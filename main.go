@@ -7,12 +7,10 @@ import (
 	"io"
 	"time"
 	"strconv"
-	"taxistream/osrm"
 	"encoding/json"
 	"taxistream/taxisim"
 	"database/sql"
 
-	"github.com/cridenour/go-postgis"
 	_ "github.com/lib/pq"
 )
 
@@ -28,6 +26,7 @@ type Configuration struct {
 	Mode                 string
 	TaxiData             []string
 	NumTaxis             int32
+	MaxRoutes            int32
 	TargetSpeedPerSecond float32
 }
 
@@ -45,7 +44,7 @@ func readConfig(configFile string) Configuration {
 }
 
 // Wraps the CSV processing functionality.
-func processTaxiDataCSV(filename string, simulator taxisim.Simulator,
+func processTaxiDataCSV(filename string, maxRoutes int32, simulator taxisim.Simulator,
 	processRow func([]string, taxisim.Simulator) taxisim.Simulator) taxisim.Simulator {
 
 	file, err := os.Open(filename)
@@ -54,7 +53,7 @@ func processTaxiDataCSV(filename string, simulator taxisim.Simulator,
 
 	reader := csv.NewReader(file)
 	reader.Comma = ','
-	lineCount := 0
+	lineCount := int32(0)
 	reader.Read()
 
 	for {
@@ -62,14 +61,16 @@ func processTaxiDataCSV(filename string, simulator taxisim.Simulator,
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			fmt.Println("Error:", err)
+			fmt.Println("Error (reading CSV record):", err)
 			return simulator
 		}
 		simulator = processRow(record, simulator)
 
-		lineCount += 1
-		if lineCount > 100 {
-			return simulator
+		if maxRoutes != -1 {
+			lineCount += 1
+			if lineCount > maxRoutes {
+				return simulator
+			}
 		}
 	}
 	return simulator
@@ -83,11 +84,26 @@ func processTaxiRecord(record []string, simulator taxisim.Simulator) taxisim.Sim
 	puLat, _ := strconv.ParseFloat(record[6], 32)
 	doLon, _ := strconv.ParseFloat(record[7], 32)
 	doLat, _ := strconv.ParseFloat(record[8], 32)
-	route, err := osrm.QueryOSRM(puTime, puLon, puLat, doLon, doLat)
+
+	passengerCount, _ := strconv.ParseInt(record[9], 10, 32)
+	fareAmount, _ := strconv.ParseFloat(record[11], 32)
+	extra, _ := strconv.ParseFloat(record[12], 32)
+	mtaTax, _ := strconv.ParseFloat(record[13], 32)
+	tipAmount, _ := strconv.ParseFloat(record[14], 32)
+	tollsAmount, _ := strconv.ParseFloat(record[15], 32)
+	ehailFee, _ := strconv.ParseFloat(record[16], 32)
+	improvementSurcharge, _ := strconv.ParseFloat(record[17], 32)
+	totalAmount, _ := strconv.ParseFloat(record[18], 32)
+	paymentType, _ := strconv.ParseInt(record[19], 10, 32)
+	tripType, _ := strconv.ParseInt(record[20], 10, 32)
+
+	route, err := taxisim.ResolveRoute(puTime, puLon, puLat, doLon, doLat)
 	if err != nil {
-		panic(err)
+		fmt.Println("Error (unable to resolve route):", err)
+		return simulator
 	}
-	simulator = taxisim.ProcessRoute(*route, simulator)
+	simulator = taxisim.ProcessRoute(*route, int32(passengerCount), fareAmount, extra, mtaTax, tipAmount,
+		tollsAmount, ehailFee, improvementSurcharge, totalAmount, int32(paymentType), int32(tripType), simulator)
 	return simulator
 }
 
@@ -115,26 +131,17 @@ func writeSimulatorOutputToDatabase(simulator taxisim.Simulator) {
 	db := connectToDatabase()
 	defer db.Close()
 
-	point := postgis.Point{-84.5014, 39.1064}
-	var newPoint postgis.Point
-
 	for idx, taxiMovement := range simulator.TaxiMovements {
 		_, err := db.Exec("INSERT INTO taxi_routes VALUES ($1, $2, $3, $4, $5, $6, $7, $8, "+
-			"$9, $10, $11, $12, $13, $14, $15, $16, ST_LineFromEncodedPolyline($17))",
-			idx, taxiMovement.PuTime, taxiMovement.DoTime, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-			taxiMovement.Geometry)
+			"$9, $10, $11, $12, $13, $14, $15, $16, $17, ST_LineFromEncodedPolyline($18))",
+			idx, taxiMovement.TaxiId, taxiMovement.PuTime, taxiMovement.DoTime, taxiMovement.PassengerCount,
+			taxiMovement.TripDistance, taxiMovement.TripDuration, taxiMovement.FareAmount, taxiMovement.Extra,
+			taxiMovement.MTATax, taxiMovement.TipAmount, taxiMovement.TollsAmount, taxiMovement.EhailFee,
+			taxiMovement.ImprovementSurcharge, taxiMovement.TotalAmount, taxiMovement.PaymentType,
+			taxiMovement.TripType, taxiMovement.Geometry)
 		if err != nil {
 			panic(err)
 		}
-	}
-
-	// Demonstrate both driver.Valuer and sql.Scanner support
-	db.QueryRow("SELECT ST_GeomFromText('POINT(-71.064544 42.28787)');").Scan(&newPoint)
-
-	fmt.Println(point)
-	fmt.Println(newPoint)
-	if point == newPoint {
-		fmt.Println("Point returned equal from PostGIS!")
 	}
 }
 
@@ -144,7 +151,7 @@ func main() {
 	fmt.Println(conf)
 
 	simulator := taxisim.SetUpSimulation(conf.NumTaxis)
-	simulator = processTaxiDataCSV(conf.TaxiData[0], simulator, processTaxiRecord)
+	simulator = processTaxiDataCSV(conf.TaxiData[0], conf.MaxRoutes, simulator, processTaxiRecord)
 
 	fmt.Println(simulator)
 

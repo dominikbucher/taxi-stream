@@ -1,17 +1,12 @@
 package osrm
 
 import (
-	"time"
 	"strconv"
 	"fmt"
 	"net/http"
 	"encoding/json"
 	"errors"
-	"github.com/twpayne/go-polyline"
 )
-
-// Here, we assume an average taxi speed of 2.222 m/s.
-var TaxiSpeed = 2.222
 
 // The response of an OSRM request.
 // This wraps concrete parts of the route.
@@ -58,20 +53,8 @@ type OSRMWaypoint struct {
 	Name     string
 }
 
-// Defines a route as used within this application.
-type Route struct {
-	PuLon    float64
-	PuLat    float64
-	PuTime   time.Time
-	DoLon    float64
-	DoLat    float64
-	DoTime   time.Time
-	Distance float64
-	Geometry string
-}
-
 // Queries ikgoeco (running OSRM) for a route from (puLon, puLat) to (doLon, doLat).
-func QueryOSRM(puTime time.Time, puLon, puLat, doLon, doLat float64) (*Route, error) {
+func QueryOSRM(puLon, puLat, doLon, doLat float64) (*OSRMResponse, error) {
 	url := "http://ikgoeco.ethz.ch/osrm/route/v1/nyccar/" +
 		strconv.FormatFloat(puLon, 'f', 10, 64) + "," +
 		strconv.FormatFloat(puLat, 'f', 10, 64) + ";" +
@@ -80,17 +63,12 @@ func QueryOSRM(puTime time.Time, puLon, puLat, doLon, doLat float64) (*Route, er
 	fmt.Println(url)
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println("Error:", err)
 		return nil, err
 	}
-	j := new(OSRMResponse)
-	json.NewDecoder(resp.Body).Decode(&j)
-	if len(j.Routes) == 0 {
+	osrmResp := new(OSRMResponse)
+	json.NewDecoder(resp.Body).Decode(&osrmResp)
+	if len(osrmResp.Routes) == 0 {
 		return nil, errors.New("no routes found")
 	}
-	decodedCoords, _, _ := polyline.DecodeCoords([]byte(j.Routes[0].Geometry))
-	return &Route{decodedCoords[0][1], decodedCoords[0][0], puTime,
-		decodedCoords[len(decodedCoords)-1][1], decodedCoords[len(decodedCoords)-1][0],
-		puTime.Add(time.Second * time.Duration(float64(j.Routes[0].Distance)/TaxiSpeed)),
-		float64(j.Routes[0].Distance), j.Routes[0].Geometry}, nil
+	return osrmResp, nil
 }

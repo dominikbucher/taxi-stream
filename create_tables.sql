@@ -6,6 +6,7 @@ DROP TABLE public.taxi_route_steps;
 CREATE TABLE public.taxi_routes
 (
   id                    BIGSERIAL NOT NULL,
+  taxi_id               INTEGER NOT NULL,
   pickup_time           TIMESTAMP WITHOUT TIME ZONE,
   dropoff_time          TIMESTAMP WITHOUT TIME ZONE,
   passenger_count       INTEGER,
