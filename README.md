@@ -53,3 +53,26 @@ even though realistically, it would probably wait for a pickup at the airport. M
 * Sometimes taxis will get ordered to go somewhere (I imagine quite frequently). They are not able to pick up
 someone else during this time. This can be modeled by simply randomly make them drive to a pickup location on order, i.e.,
 by not being free during this time. 
+
+## Analysis and Visualization
+
+To visualize the taxis with e.g. https://github.com/anitagraser/TimeManager, use the following script:
+```sql
+CREATE TABLE IF NOT EXISTS interpolated_taxi_routes (
+	taxi_id integer,
+    ts timestamp without time zone,
+    geom Geometry
+);
+INSERT INTO interpolated_taxi_routes
+(
+    WITH start AS 
+      (SELECT id, taxi_id, geometry, pickup_time, dropoff_time FROM taxi_routes), 
+    intervals AS 
+      (SELECT generate_series (0, 20) as steps)
+    SELECT  
+         taxi_id,
+         pickup_time + INTERVAL '1 MINUTES' * steps AS ts,
+         ST_Line_Interpolate_Point(geometry, steps/(SELECT count(steps)::float-1 FROM intervals)) AS geom
+    FROM start, intervals
+);
+```
