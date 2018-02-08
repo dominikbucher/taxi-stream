@@ -36,7 +36,7 @@ func findTaxi(taxis []Taxi, puTime time.Time, puLon float64, puLat float64) (*Ta
 // Determines if a taxi could reach a given route (pickup location).
 func canReach(taxi Taxi, puTime time.Time, puLon float64, puLat float64) bool {
 	return puTime.After(taxi.Time) &&
-		(Distance(taxi.Lon, taxi.Lat, puLon, puLat) < puTime.Sub(taxi.Time).Seconds()*TaxiSpeed)
+		(HaversineDistance(taxi.Lon, taxi.Lat, puLon, puLat) < puTime.Sub(taxi.Time).Seconds()*TaxiSpeed)
 }
 
 // Creates a random taxi movement and updates the taxi to the newest location.

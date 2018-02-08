@@ -2,10 +2,10 @@
 
 
 [[projects]]
-  name = "github.com/cridenour/go-postgis"
+  name = "github.com/gorilla/websocket"
   packages = ["."]
-  revision = "07bea7123e00b49f286932473cbaf79b60d40fa5"
-  version = "v1.0.0"
+  revision = "ea4d1f681babbce9545c9c5f3d5194a789c89f5b"
+  version = "v1.2.0"
 
 [[projects]]
   branch = "master"
@@ -22,6 +22,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "56576576e0406e9ee832fd95746562e7cbb4b58f5fbca79f18385275cb44ea9a"
+  inputs-digest = "68ddc1f7eb8f2dd9b8774fd6e16a89107784df01ff2af58666c5e93e14d3a7d6"
   solver-name = "gps-cdcl"
   solver-version = 1

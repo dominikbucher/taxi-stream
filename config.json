@@ -1,11 +1,11 @@
 {
-  "mode": "process",
+  "mode": "stream",
 
   "taxiData": [
     "data/green_tripdata_2016-01.csv"
   ],
-  "numTaxis": 3,
-  "maxRoutes": 50000,
+  "numTaxis": 50,
+  "maxRoutes": 1000,
 
   "targetSpeedPerSecond": 5000,
 
