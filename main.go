@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"taxistream/base"
 	"taxistream/taxisim"
+	"taxistream/taxisite"
 
 	_ "github.com/lib/pq"
-	"taxistream/taxisite"
 )
 
 // Reads a configuration file.
@@ -38,8 +38,7 @@ func main() {
 		taxisim.RunSim(conf)
 	case "stream":
 		taxisite.ExposeEndpoints(conf)
-		fmt.Println("Not implemented yet.")
 	default:
-		fmt.Println("Please specify run mode in config file: {'process', 'stream'}.")
+		fmt.Println("Please specify run 'mode' in config file: {'process', 'stream'}.")
 	}
 }

@@ -2,7 +2,6 @@ package taxisim
 
 import (
 	"math"
-	"errors"
 )
 
 // Default earth radius.
@@ -48,13 +47,16 @@ func PolylineLength(coords [][]float64) float64 {
 
 // Computes a coordinate along a polyline, namely after "dist" into the polyline.
 func AlongPolyline(dist float64, coords [][]float64) (float64, float64) {
+	if dist < 0 {
+		return coords[0][1], coords[0][0]
+	}
 	var totDist float64 = 0
 	for i := 0; i < len(coords)-1; i++ {
 		c1 := coords[i]
 		c2 := coords[i+1]
 		d := Distance(c1[1], c1[0], c2[1], c2[0])
 		if totDist+d > dist {
-			perc := d / (dist - totDist)
+			perc := (dist - totDist) / d
 			lon := c1[1] + (c2[1]-c1[1])*perc
 			lat := c1[0] + (c2[0]-c1[0])*perc
 			return lon, lat
@@ -62,5 +64,5 @@ func AlongPolyline(dist float64, coords [][]float64) (float64, float64) {
 			totDist += d
 		}
 	}
-	panic(errors.New("dist longer than polyline"))
+	return coords[len(coords)-1][1], coords[len(coords)-1][0]
 }

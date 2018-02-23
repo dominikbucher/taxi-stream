@@ -4,10 +4,12 @@
   "taxiData": [
     "data/green_tripdata_2016-01.csv"
   ],
-  "numTaxis": 50,
-  "maxRoutes": 1000,
+  "numTaxis": 6000,
+  "maxRoutes": 10000,
 
-  "targetSpeedPerSecond": 5000,
+  "targetSpeedPerSecond": 3000,
+  "trackpointPrepWindowSize": 5,
+  "timeWarp": 60,
 
   "dbUser": "dobucher",
   "dbPassword": "dominik",
