@@ -1,8 +1,28 @@
-# Taxistream Generator
+# New York City Taxistream Provider
 
-This program uses taxi data from New York to create (half-simulated) data streams. The taxi data is available from http://www.nyc.gov/html/tlc/html/about/trip_record_data.shtml. The idea is to evaluate methods that are required for stream processing mobility data with the intent of providing people with transport. For example, taxis (or also autonomous cars, buses, etc.) constantly send location updates and if they are free or not. This data has to be cleaned, processed, and probably / partially stored in order to make it queryable for people looking for transport.
+This program uses taxi data from New York to create (half-simulated) data streams of taxis moving throughout New York. The taxi data is available from http://www.nyc.gov/html/tlc/html/about/trip_record_data.shtml. The idea is to evaluate methods that are required for stream processing mobility data with the intent of providing people with transport. For example, taxis (or also autonomous cars, buses, etc.) constantly send location updates and if they are free or not. This data has to be cleaned, processed, and probably / partially stored in order to make it queryable for people looking for transport.
 
-## Data
+
+## Program Structure
+
+The program in this repository consists of three parts:
+* Generation of taxi data (which is later used for streaming) based on the above dataset.
+* Streaming of generated taxi data.
+* A template for a stream consumer written in Java. This is later going to be removed from this repository.
+
+
+## Setup
+
+Both the taxi data generator as well as the streaming component are written in Go. After installing and setting up Go as described on https://golang.org, install `dep` (https://github.com/golang/dep) to pull in all the dependencies. Using `dep ensure` (I guess...), you can install all required dependencies. 
+
+Secondly, you need a PostGIS (https://postgis.net) database installed on your system (this of course reuqires Postgres as well). 
+
+In the `config.json` file, you can specify all important parameters, such as the database users, database name, number of taxis to be simulated, etc. Importantly, the `mode` parameter (either `process` or `stream`) determines if the application builds a simulated dataset, or serves this as a data stream on port 8080.
+
+Using `go build main.go` you can finally compile and run the program. Note that for building the dataset, you need to be in the ETH network, as access to the OSRM instance running on ikgoeco.ethz.ch is restricted to the ETH network. 
+
+
+## Base Data and Taxi Route Generation
 
 The taxi data is available as CSV files, containing for example:
 
@@ -22,7 +42,24 @@ The taxi data is available as CSV files, containing for example:
 | ----- | ----- | ----- | ----- |
 | 0.3 | 11.16 | 1 | 1 |
 
-From the pickup and dropoff locations, a route is computed using the Open Source Routing Machine (www.project-osrm.org). As no taxi ids are given in these datasets, and it is not known where taxis drive between served routes, a simple model is applied to generate the data:
+From the pickup and dropoff locations, a route is computed using the Open Source Routing Machine (www.project-osrm.org). It is simply assumed that taxis have a uniform speed on any routes (for now - we might add speed depending on the road type later).
+
+The dataset has several drawbacks:
+* No taxi IDs are given, i.e., we don't know which taxi serves which route. 
+* Only routes with passengers are recorded in the dataset. It is not known what taxis do between these routes, nor if they randomly pick up a passenger or drive somewhere on purpose.
+* The taxi datasets are available for yellow cabs (NYC), green cabs (surrounding suburbian areas), and FHW vehicles (FHVs). It is not known how many of these taxis are on the streets at any given time.
+
+To circumvent these problems, we have to use a model to generate the missing data. To improve the model, we additionally use data from the 2014 NYC taxicab factbook (http://www.nyc.gov/html/tlc/downloads/pdf/2014_taxicab_fact_book.pdf). For example, we have a typical pattern of "taxis on the road". Note that this pattern is most likely extracted from the same or a similar dataset as we are using, but we are still going to use it to determine how many taxis we simulate with our model. In particular, we assume the following number of taxis on the road at each hour of the day (yellow taxis, for green taxis multiply by around 1.4, as there are approx. 13'200 yellow taxis, and 18'000 green taxis), starting at midnight:
+
+| 00:00 | 01:00 | 02:00 | 03:00 | 04:00 | 05:00 | 06:00 | 07:00 | 08:00 | 09:00 | 10:00 | 11:00 |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| 6500 | 5325 | 4150 | 2975 | 1800 | 3340 | 4880 | 6420 | 7960 | 9500 | 9167 | 9833 |
+
+| 12:00 | 13:00 | 14:00 | 15:00 | 16:00 | 17:00 | 18:00 | 19:00 | 20:00 | 21:00 | 22:00 | 23:00 |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| 10000 | 9500 | 8767 | 8033 | 7300 | 9150 | 11000 | 10500 | 10000 | 9500 | 9000 | 7750 |
+
+To generate the taxi routes, we apply the following method:
 
 1. For each route, we check if there is any taxi that is either in init state (i.e., has never served a customer before) or is free and can reach the pickup location before the pickup time.
 2. We randomly choose one of these taxis (if no taxi is available, this route is simply skipped), and route to the pickup location. In case the taxi would arrive way too early, we let it cruise around randomly for a while. 
@@ -30,8 +67,7 @@ From the pickup and dropoff locations, a route is computed using the Open Source
 
 ### Notes About Data
 
-* It seems the taxi data **does not contain** lat/lon after June 2016. So probably better to use data from before, as this
-is a hypothetical example anyways.
+* It seems the taxi data **does not contain** lat/lon after June 2016. So probably better to use data from before, as this is a hypothetical example anyways.
 * Other interesting repositories and blogs:
   * https://github.com/toddwschneider/nyc-taxi-data
   * http://minimaxir.com/2015/11/nyc-ggplot2-howto/
@@ -45,14 +81,9 @@ A second part of the program simply constantly pipes out location and other pack
  
 ## Known Simulator Problems
 
-* Taxi movements do not line up, i.e., sometimes a taxi arrives later than it starts from a certain point.
-This can be resolved by actually routing to the pickup location, and checking if it's feasible.
-Otherwise, one can choose another candidate. This will increase running time though.
-* Taxis do not necessarily stay in vicinity. I saw a taxi that happily drove back to Manhattan from the airport, 
-even though realistically, it would probably wait for a pickup at the airport. Maybe we could introduce a random waiting period?
-* Sometimes taxis will get ordered to go somewhere (I imagine quite frequently). They are not able to pick up
-someone else during this time. This can be modeled by simply randomly make them drive to a pickup location on order, i.e.,
-by not being free during this time. 
+* Taxi movements do not line up, i.e., sometimes a taxi arrives later than it starts from a certain point. This can be resolved by actually routing to the pickup location, and checking if it's feasible. Otherwise, one can choose another candidate. This will increase running time though.
+* Taxis do not necessarily stay in vicinity. I saw a taxi that happily drove back to Manhattan from the airport, even though realistically, it would probably wait for a pickup at the airport. Maybe we could introduce a random waiting period?
+* Sometimes taxis will get ordered to go somewhere (I imagine quite frequently). They are not able to pick up someone else during this time. This can be modeled by simply randomly make them drive to a pickup location on order, i.e., by not being free during this time. 
 
 ## Analysis and Visualization
 
