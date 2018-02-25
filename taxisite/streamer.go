@@ -8,12 +8,15 @@ import (
 	"fmt"
 )
 
+// The streamer simply takes the messages produced by the trackpoint preparation component
+// and pushes them out to interested parties.
 type Streamer struct {
-	WebsocketChannel  *websocket.Conn
+	WebsocketChannel  map[*websocket.Conn]bool
 	TaxiupdateChannel *chan []byte
 	ChannelUpdates    *ring.Ring
 }
 
+// Computes the average value in a ring of float64 values.
 func ringAverage(ring *ring.Ring) float64 {
 	avg := 0.0
 	els := 0.0
@@ -26,10 +29,12 @@ func ringAverage(ring *ring.Ring) float64 {
 	return avg / els
 }
 
+// Sets up the streamer and lets it listen to potential updates on a channel.
 func setUpStreamer(conf base.Configuration) *Streamer {
+	websocketChannels := make(map[*websocket.Conn]bool, 0)
 	taxiupdates := make(chan []byte, int32(conf.TargetSpeedPerSecond*conf.TrackpointPrepWindowSize*1.1))
 	channelUpdates := ring.New(1000)
-	streamer := Streamer{nil, &taxiupdates, channelUpdates}
+	streamer := Streamer{websocketChannels, &taxiupdates, channelUpdates}
 
 	throughput := conf.TargetSpeedPerSecond
 	backoff := 1000000000.0 / conf.TargetSpeedPerSecond
@@ -40,8 +45,10 @@ func setUpStreamer(conf base.Configuration) *Streamer {
 	go func() {
 		for {
 			u := <-taxiupdates
-			if streamer.WebsocketChannel != nil {
-				streamer.WebsocketChannel.WriteMessage(websocket.TextMessage, u)
+			if len(streamer.WebsocketChannel) > 0 {
+				for c := range streamer.WebsocketChannel{
+					c.WriteMessage(websocket.TextMessage, u)
+				}
 			}
 			if reset {
 				lastSent = time.Now()
@@ -50,7 +57,6 @@ func setUpStreamer(conf base.Configuration) *Streamer {
 			streamer.ChannelUpdates = streamer.ChannelUpdates.Next()
 			streamer.ChannelUpdates.Value = float64(time.Now().Sub(lastSent).Nanoseconds())
 			lastSent = time.Now()
-			//fmt.Println("Sent 1:", throughput, backoff, len(taxiupdates))
 
 			statsCounter += 1
 			if (statsCounter % 1000) == 0 {
@@ -62,15 +68,6 @@ func setUpStreamer(conf base.Configuration) *Streamer {
 			targetProcTime := processingTime * conf.TargetSpeedPerSecond
 			backoff = (1000000000 - targetProcTime) / conf.TargetSpeedPerSecond
 
-			//scale := throughput / conf.TargetSpeedPerSecond
-			//backoff = backoff * scale
-			//fmt.Println(ringAverage(streamer.ChannelUpdates), throughput, backoff, len(taxiupdates))
-			/*
-			if ring1SecAgo, ok := streamer.ChannelUpdates.Next().Value.(time.Time); ok {
-				timeDiff := math.Max(1, float64(time.Now().Sub(ring1SecAgo).Nanoseconds()))
-				throughput = 1000000000.0 / timeDiff * conf.TargetSpeedPerSecond
-				backoff = backoff + 1000000000.0/(throughput-conf.TargetSpeedPerSecond)
-			}*/
 			// If we exhaust the channel, reset to the target speed.
 			if len(taxiupdates) == 0 {
 				backoff = 1000000000.0 / conf.TargetSpeedPerSecond

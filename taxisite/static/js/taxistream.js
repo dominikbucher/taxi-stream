@@ -92,17 +92,19 @@ $(function () {
         };
         socket.onmessage = function (e) {
             var data = JSON.parse(e.data);
-            if (!(data["taxiId"] in taxiData)) {
-                taxiData[data["taxiId"]] = {
-                    taxiId: data["taxiId"],
-                    color: getRandomColor(),
-                    lon: 0.0,
-                    lat: 0.0
+            if ("lon" in data && "lat" in data) {
+                if (!(data["taxiId"] in taxiData)) {
+                    taxiData[data["taxiId"]] = {
+                        taxiId: data["taxiId"],
+                        color: getRandomColor(),
+                        lon: 0.0,
+                        lat: 0.0
+                    }
                 }
+                taxiData[data["taxiId"]].lon = data["lon"];
+                taxiData[data["taxiId"]].lat = data["lat"];
+                taxiLayer.needRedraw();
             }
-            taxiData[data["taxiId"]].lon = data["lon"];
-            taxiData[data["taxiId"]].lat = data["lat"];
-            taxiLayer.needRedraw();
         };
         socket.onclose = function () {
             container.append("<p>Socket closed</p>");

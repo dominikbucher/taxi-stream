@@ -12,12 +12,19 @@ import (
 	"encoding/json"
 )
 
+// The trackpoint preparation component constantly retrieves routes from a database,
+// and generates taxi updates from it.
+//
+// As for now, this only supports location and occupancy updates. Later, things like
+// prices, ratings, destinations, fuel and motor status, and also non-taxi events
+// such as transport requests, congestion updates, etc. might be added.
 type TrackpointPrepper struct {
 	WindowStart time.Time
 	WindowEnd   time.Time
 	Routes      []Route
 }
 
+// A route as it is stored in the database.
 type Route struct {
 	Id             int64
 	TaxiId         int32
@@ -28,10 +35,17 @@ type Route struct {
 	Geometry       string
 }
 
+// A taxi location update that is serialized as JSON and sent to interested parties.
 type TaxiUpdate struct {
 	TaxiId int32   `json:"taxiId"`
 	Lon    float64 `json:"lon"`
 	Lat    float64 `json:"lat"`
+}
+
+// A taxi occupancy update.
+type TaxiOccupancyUpdate struct {
+	TaxiId       int32 `json:"taxiId"`
+	NumOccupants int32 `json:"numOccupants"`
 }
 
 // Sets up the connection to the database.
@@ -49,7 +63,7 @@ func connectToDatabase(conf base.Configuration) *sql.DB {
 	return db
 }
 
-// Takes the output of a simulation run and writes it to PostGIS.
+// Gets the simulated routes from PostGIS.
 func getRoutes(windowStart time.Time, windowEnd time.Time, ids []int64, db *sql.DB) []Route {
 	rows, err := db.Query("SELECT id, taxi_id, pickup_time, dropoff_time, passenger_count, "+
 		"trip_distance, ST_AsEncodedPolyline(geometry) "+
@@ -75,10 +89,11 @@ func getRoutes(windowStart time.Time, windowEnd time.Time, ids []int64, db *sql.
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Routes:", routes)
 	return routes
 }
 
+// Gets routes from a database, and transforms them into the appropriate number of taxi update
+// messages. These are then sent to the streamer component of the application.
 func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, db *sql.DB, conf base.Configuration) {
 	fmt.Println("TrackpointPrepper:", trackpointPrepper.WindowStart, "-", trackpointPrepper.WindowEnd)
 	windowSize := conf.TrackpointPrepWindowSize
@@ -116,7 +131,17 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 	timeSlice := trackpointPrepper.WindowStart
 	cnt := 0
 	for timeSlice.Before(trackpointPrepper.WindowEnd) {
+		sliceEnd := timeSlice.Add(timeInc)
+
 		for _, r := range trackpointPrepper.Routes {
+			// Check if this route just started now. If so, we have to create an occupancy message.
+			if r.PuTime.After(timeSlice) && r.PuTime.Before(sliceEnd) {
+				// This is a new route, we have to generate an occupancy message.
+				b, _ := json.Marshal(TaxiOccupancyUpdate{r.TaxiId, r.PassengerCount})
+				*streamer.TaxiupdateChannel <- b
+			}
+
+			// In any case, we want to generate some location updates.
 			coords, _, err := polyline.DecodeCoords([]byte(strings.Replace(r.Geometry, "\\\\", "\\", -1)))
 			if err != nil {
 				panic(err)
@@ -125,10 +150,7 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 			if perc > 0 && perc < 1 {
 				lon, lat := taxisim.AlongPolyline(taxisim.PolylineLength(coords)*perc, coords)
 				if streamer.TaxiupdateChannel != nil {
-					// fmt.Print(".")
-					//fmt.Println(perc, r.TaxiId, lon, lat)
 					b, _ := json.Marshal(TaxiUpdate{r.TaxiId, lon, lat})
-					//fmt.Println(string(b))
 					*streamer.TaxiupdateChannel <- b
 					cnt += 1
 				}
@@ -137,10 +159,16 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 		timeSlice = timeSlice.Add(timeInc)
 	}
 	fmt.Println("Added messages", cnt)
-	trackpointPrepper.WindowStart = trackpointPrepper.WindowStart.Add(time.Second * time.Duration(windowSize*timeWarp))
-	trackpointPrepper.WindowEnd = trackpointPrepper.WindowEnd.Add(time.Second * time.Duration(windowSize*timeWarp))
+	if len(trackpointPrepper.Routes) > 0 {
+		trackpointPrepper.WindowStart = trackpointPrepper.WindowStart.Add(time.Second * time.Duration(windowSize*timeWarp))
+		trackpointPrepper.WindowEnd = trackpointPrepper.WindowEnd.Add(time.Second * time.Duration(windowSize*timeWarp))
+	} else {
+		trackpointPrepper.WindowStart = time.Date(2016, time.January, 1, 0, 29, 20, 0, time.UTC)
+		trackpointPrepper.WindowEnd = time.Date(2016, time.January, 1, 0, 29, int(20+windowSize*conf.TimeWarp), 0, time.UTC)
+	}
 }
 
+// Sets up the trackpoint preparation component.
 func setUpTrackpointPrep(conf base.Configuration, streamer Streamer) {
 	db := connectToDatabase(conf)
 	windowSize := conf.TrackpointPrepWindowSize

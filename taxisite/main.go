@@ -3,17 +3,14 @@ package taxisite
 import (
 	"net/http"
 	"github.com/gorilla/websocket"
-	"fmt"
 	"strings"
 	"taxistream/base"
+	"log"
 )
-
-type msg struct {
-	Num int
-}
 
 var streamer *Streamer = nil
 
+// Exposes some endpoints to interact with the streaming application.
 func ExposeEndpoints(conf base.Configuration) {
 	streamer = setUpStreamer(conf)
 	setUpTrackpointPrep(conf, *streamer)
@@ -23,8 +20,8 @@ func ExposeEndpoints(conf base.Configuration) {
 	http.ListenAndServe(":8080", nil)
 }
 
+// Upgrades a connection to WebSockets.
 func wsHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.Host)
 	if r.Header.Get("Origin") != "http://"+r.Host && !strings.Contains(r.Host, "localhost") {
 		http.Error(w, "Origin not allowed", 403)
 		return
@@ -34,23 +31,33 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not open websocket connection", http.StatusBadRequest)
 	}
 
-	streamer.WebsocketChannel = conn
-	go echo(conn)
+	streamer.WebsocketChannel[conn] = true
+	log.Println("Serving", len(streamer.WebsocketChannel), "sockets.")
+	go handleWs(conn)
 }
 
-func echo(conn *websocket.Conn) {
+// Handles a websocket, in particular, closes it after the client goes offline.
+func handleWs(conn *websocket.Conn) {
+	defer conn.Close()
 	for {
-		m := msg{}
-
-		err := conn.ReadJSON(&m)
+		messageType, p, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Println("Error reading json.", err)
+			if websocket.IsCloseError(err) || websocket.IsUnexpectedCloseError(err) {
+				delete(streamer.WebsocketChannel, conn)
+				log.Println("Serving", len(streamer.WebsocketChannel), "sockets.")
+			} else {
+				log.Println("Error when reading from WebSocket channel.")
+				delete(streamer.WebsocketChannel, conn)
+				log.Println("Serving", len(streamer.WebsocketChannel), "sockets.")
+			}
+			log.Println(err)
+			return
 		}
 
-		fmt.Printf("Got message: %#v\n", m)
-
-		if err = conn.WriteJSON(m); err != nil {
-			fmt.Println(err)
+		// Simply write the message back to the sender (pong).
+		if err := conn.WriteMessage(messageType, p); err != nil {
+			log.Println(err)
+			return
 		}
 	}
 }
