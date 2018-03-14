@@ -123,7 +123,6 @@ func RunSim(conf base.Configuration) {
 	simulator := setUpSimulation(conf.NumTaxis)
 	simulator = processTaxiDataCSV(conf.TaxiData[0], conf.MaxRoutes, simulator, processTaxiRecord)
 
-	fmt.Println(simulator)
 	fmt.Println("Total routes:", simulator.TotalRoutes)
 	fmt.Println("Unresolved routes:", simulator.UnresolvedRoutes)
 
