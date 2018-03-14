@@ -118,6 +118,16 @@ func writeSimulatorOutputToDatabase(conf base.Configuration, simulator Simulator
 	}
 }
 
+// Create an index on the time columns.
+func indexDatabase(conf base.Configuration) {
+	db := connectToDatabase(conf)
+	defer db.Close()
+
+	db.Exec("CREATE INDEX taxi_routes_pickup_time_idx ON taxi_routes (pickup_time);")
+	db.Exec("CREATE INDEX taxi_routes_dropoff_time_idx ON taxi_routes (dropoff_time);")
+	db.Exec("CREATE INDEX taxi_routes_id_idx ON taxi_routes (id);")
+}
+
 // Runs the simulation, based on a configuration file.
 func RunSim(conf base.Configuration) {
 	simulator := setUpSimulation(conf.NumTaxis)
@@ -126,5 +136,9 @@ func RunSim(conf base.Configuration) {
 	fmt.Println("Total routes:", simulator.TotalRoutes)
 	fmt.Println("Unresolved routes:", simulator.UnresolvedRoutes)
 
+	fmt.Println("Writing simulation output to database.")
 	writeSimulatorOutputToDatabase(conf, simulator)
+
+	fmt.Println("Creating indexes.")
+	indexDatabase(conf)
 }
