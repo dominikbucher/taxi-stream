@@ -91,6 +91,9 @@ func connectToDatabase(conf base.Configuration) *sql.DB {
 	// Ensure we have PostGIS on the table.
 	db.Exec("CREATE EXTENSION IF NOT EXISTS postgis;")
 
+	db.Exec("CREATE SEQUENCE IF NOT EXISTS taxi_routes_id_seq INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1;")
+	db.Exec("CREATE TABLE IF NOT EXISTS taxi_routes (id bigint NOT NULL DEFAULT nextval('taxi_routes_id_seq'::regclass), taxi_id integer NOT NULL, pickup_time timestamp without time zone, dropoff_time timestamp without time zone, passenger_count integer, trip_distance double precision, trip_duration double precision, fare_amount double precision, extra double precision, mta_tax double precision, tip_amount double precision, tolls_amount double precision, ehail_fee double precision, improvement_surcharge double precision, total_amount double precision, payment_type integer, trip_type integer, geometry geometry, CONSTRAINT taxi_routes_pkey PRIMARY KEY (id))")
+
 	// And clean database as well.
 	db.Exec("TRUNCATE TABLE taxi_routes;")
 	return db

@@ -21,3 +21,4 @@
 /spark-taxi-processor/.idea
 /spark-taxi-processor/SparkTaxiProcessor.iml
 /spark-taxi-processor/target
+.ipynb_checkpoints

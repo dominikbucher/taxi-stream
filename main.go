@@ -9,6 +9,7 @@ import (
 	"taxistream/taxisite"
 
 	_ "github.com/lib/pq"
+	"runtime"
 )
 
 // Reads a configuration file.
@@ -37,6 +38,7 @@ func main() {
 	case "process":
 		taxisim.RunSim(conf)
 	case "stream":
+		runtime.GOMAXPROCS(4)
 		taxisite.ExposeEndpoints(conf)
 	default:
 		fmt.Println("Please specify run 'mode' in config file: {'process', 'stream'}.")

@@ -11,6 +11,8 @@ type Configuration struct {
 	TrackpointPrepWindowSize float64
 	TimeWarp                 float64
 
+	Log bool
+
 	DbUser     string
 	DbPassword string
 	DbName     string

@@ -11,6 +11,8 @@
   "trackpointPrepWindowSize": 5,
   "timeWarp": 60,
 
+  "log": false,
+
   "dbUser": "dobucher",
   "dbPassword": "dominik",
   "dbName": "taxi-streaming",

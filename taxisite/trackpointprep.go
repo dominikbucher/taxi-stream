@@ -48,6 +48,26 @@ type TaxiOccupancyUpdate struct {
 	NumOccupants int32 `json:"numOccupants"`
 }
 
+// Updates where a taxi will travel to (when it gets booked).
+type TaxiDestinationUpdate struct {
+	TaxiId  int32   `json:"taxiId"`
+	DestLon float64 `json:"destLon"`
+	DestLat float64 `json:"destLat"`
+}
+
+// Update when a taxi receives a reservation.
+type TaxiReservationUpdate struct {
+	TaxiId         int32   `json:"taxiId"`
+	ReservationLon float64 `json:"reservationLon"`
+	ReservationLat float64 `json:"reservationLat"`
+}
+
+// When a taxi finishes serving a route, its price is sent.
+type TaxiRouteCompletedUpdate struct {
+	TaxiId int32   `json:"taxiId"`
+	Price  float64 `json:"price"`
+}
+
 // Sets up the connection to the database.
 func connectToDatabase(conf base.Configuration) *sql.DB {
 	dataSourceName := fmt.Sprintf("host=%s port=%s dbname=%s sslmode=%s user=%s password=%s",
@@ -120,46 +140,62 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 	trackpointPrepper.Routes = newRoutes
 	fmt.Println("TrackpointPrepper.Routes.len:", len(trackpointPrepper.Routes))
 
-	// Create updates for all taxis. First, compute how many updates we need to reach the target speed.
-	numUpdates := windowSize * targetSpeed
-	numTimeSlices := numUpdates / float64(len(trackpointPrepper.Routes))
-	timeInc := time.Duration(1000000000.0*windowSize*timeWarp/numTimeSlices) * time.Nanosecond
-	fmt.Println("#Updates", numUpdates)
-	fmt.Println("#Time Slices", numTimeSlices)
-	fmt.Println("Time increase", timeInc)
+	if len(trackpointPrepper.Routes) > 0 {
+		// Create updates for all taxis. First, compute how many updates we need to reach the target speed.
+		numUpdates := windowSize * targetSpeed
+		numTimeSlices := numUpdates / float64(len(trackpointPrepper.Routes))
+		timeInc := time.Duration(1000000000.0*windowSize*timeWarp/numTimeSlices) * time.Nanosecond
 
-	timeSlice := trackpointPrepper.WindowStart
-	cnt := 0
-	for timeSlice.Before(trackpointPrepper.WindowEnd) {
-		sliceEnd := timeSlice.Add(timeInc)
+		timeSlice := trackpointPrepper.WindowStart
+		updates := make([][]byte, 0)
+		for timeSlice.Before(trackpointPrepper.WindowEnd) {
+			sliceEnd := timeSlice.Add(timeInc)
 
-		for _, r := range trackpointPrepper.Routes {
-			// Check if this route just started now. If so, we have to create an occupancy message.
-			if r.PuTime.After(timeSlice) && r.PuTime.Before(sliceEnd) {
-				// This is a new route, we have to generate an occupancy message.
-				b, _ := json.Marshal(TaxiOccupancyUpdate{r.TaxiId, r.PassengerCount})
-				*streamer.TaxiupdateChannel <- b
-			}
+			for _, r := range trackpointPrepper.Routes {
+				// Check if this route just started now. If so, we have to create an occupancy message.
+				if r.PuTime.After(timeSlice) && r.PuTime.Before(sliceEnd) {
+					// This is a new route, we have to generate an occupancy message.
+					b, _ := json.Marshal(TaxiOccupancyUpdate{r.TaxiId, r.PassengerCount})
+					updates = append(updates, b)
+				}
 
-			// In any case, we want to generate some location updates.
-			coords, _, err := polyline.DecodeCoords([]byte(strings.Replace(r.Geometry, "\\\\", "\\", -1)))
-			if err != nil {
-				panic(err)
-			}
-			perc := timeSlice.Sub(r.PuTime).Seconds() / r.DoTime.Sub(r.PuTime).Seconds()
-			if perc > 0 && perc < 1 {
-				lon, lat := taxisim.AlongPolyline(taxisim.PolylineLength(coords)*perc, coords)
-				if streamer.TaxiupdateChannel != nil {
-					b, _ := json.Marshal(TaxiUpdate{r.TaxiId, lon, lat})
-					*streamer.TaxiupdateChannel <- b
-					cnt += 1
+				// In any case, we want to generate some location updates.
+				// TODO Auf UNIX / Mac scheint es anders kodiert zu sein, d.h. das strings Replace ist nicht nötig.
+				// coords, _, err := polyline.DecodeCoords([]byte(r.Geometry))
+				coords, _, err := polyline.DecodeCoords([]byte(strings.Replace(r.Geometry, "\\\\", "\\", -1)))
+				if err != nil {
+					panic(err)
+				}
+				perc := timeSlice.Sub(r.PuTime).Seconds() / r.DoTime.Sub(r.PuTime).Seconds()
+				if perc > 0 && perc < 1 {
+					lon, lat := taxisim.AlongPolyline(taxisim.PolylineLength(coords)*perc, coords)
+					if streamer.TaxiupdateChannel != nil {
+						b, _ := json.Marshal(TaxiUpdate{r.TaxiId, lon, lat})
+						updates = append(updates, b)
+					}
 				}
 			}
+			timeSlice = timeSlice.Add(timeInc)
 		}
-		timeSlice = timeSlice.Add(timeInc)
-	}
-	fmt.Println("Added messages", cnt)
-	if len(trackpointPrepper.Routes) > 0 {
+		// Because some routes are not within the time slices, there are not enough updates. We fill in the missing ones
+		// by repeating some.
+		missingUpdates := int(numUpdates) - len(updates)
+		updateCount := float64(len(updates)) / float64(missingUpdates)
+		cnt := 0.0
+		totCnt := 0
+		for _, r := range updates {
+			*streamer.TaxiupdateChannel <- r
+			totCnt += 1
+			if updateCount > 0 && cnt > updateCount {
+				*streamer.TaxiupdateChannel <- r
+				totCnt += 1
+				cnt -= updateCount
+			}
+
+			cnt += 1
+		}
+		fmt.Println("Added messages", totCnt)
+
 		trackpointPrepper.WindowStart = trackpointPrepper.WindowStart.Add(time.Second * time.Duration(windowSize*timeWarp))
 		trackpointPrepper.WindowEnd = trackpointPrepper.WindowEnd.Add(time.Second * time.Duration(windowSize*timeWarp))
 	} else {
