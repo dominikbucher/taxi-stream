@@ -3,6 +3,8 @@ $(function () {
         $('#overlay').show();
     }
 
+    var showTaxiIds = false;
+
     var map = L.map('map').setView([40.730610, -73.969242], 13);
 
     // Hydda layer.
@@ -96,6 +98,11 @@ $(function () {
                     var point = info.layer._map.latLngToContainerPoint([data.lat, data.lon]);
                     var color = getTaxiColor(data.status);
                     renderCircle(ctx, point, hexToRGB(color, 0.5), hexToRGB(color, 0.9), 5.0);
+
+                    if (showTaxiIds) {
+                        ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+                        ctx.fillText(data.taxiId, point.x + 7.5, point.y + 3);
+                    }
                 }
             }
         });
@@ -147,5 +154,9 @@ $(function () {
     $("#sendBtn").click(function (e) {
         e.preventDefault();
         ws.send(JSON.stringify({Num: parseInt($("#numberField").val())}));
+    });
+
+    $("#show-taxi-ids").change(function () {
+        showTaxiIds = this.checked;
     });
 });
