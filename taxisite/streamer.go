@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // The streamer simply takes the messages produced by the trackpoint preparation component
@@ -59,46 +60,51 @@ func setUpStreamer(conf base.Configuration) *Streamer {
 
 		for {
 			u := <-taxiupdates
-			if len(streamer.WebsocketChannel) > 0 {
-				for c := range streamer.WebsocketChannel {
-					c.WriteMessage(websocket.TextMessage, u)
+			if float64(len(taxiupdates)) > 0.95 * float64(cap(taxiupdates)) && strings.Contains(string(u), "\"lon\"") {
+				// The channel is almost full... this is a hack to simply let off some steam.
+				// TODO Remove this hack.
+			} else {
+				if len(streamer.WebsocketChannel) > 0 {
+					for c := range streamer.WebsocketChannel {
+						c.WriteMessage(websocket.TextMessage, u)
+					}
 				}
-			}
-			if reset {
+				if reset {
+					lastSent = time.Now()
+					reset = false
+				}
+				streamer.ChannelUpdates = streamer.ChannelUpdates.Next()
+				streamer.ChannelUpdates.Value = float64(time.Now().Sub(lastSent).Nanoseconds())
 				lastSent = time.Now()
-				reset = false
-			}
-			streamer.ChannelUpdates = streamer.ChannelUpdates.Next()
-			streamer.ChannelUpdates.Value = float64(time.Now().Sub(lastSent).Nanoseconds())
-			lastSent = time.Now()
 
-			statsCounter += 1
-			if (statsCounter % 1000) == 0 {
-				fmt.Println("Sent 1000:", ringAverage(streamer.ChannelUpdates), throughput, backoff, len(taxiupdates))
-			}
+				statsCounter += 1
+				if (statsCounter % 1000) == 0 {
+					fmt.Println("Sent 1000:", ringAverage(streamer.ChannelUpdates), throughput, backoff, len(taxiupdates))
+				}
 
-			timePerMessage := ringAverage(streamer.ChannelUpdates)
-			throughput = 1000000000.0 / timePerMessage
-			processingTime := streamer.ChannelUpdates.Value.(float64) - backoff
-			targetProcTime := processingTime * conf.TargetSpeedPerSecond
-			backoff = (1000000000 - targetProcTime) / conf.TargetSpeedPerSecond
+				timePerMessage := ringAverage(streamer.ChannelUpdates)
+				throughput = 1000000000.0 / timePerMessage
+				processingTime := streamer.ChannelUpdates.Value.(float64) - backoff
+				targetProcTime := processingTime * conf.TargetSpeedPerSecond
+				backoff = (1000000000 - targetProcTime) / conf.TargetSpeedPerSecond
 
-			if conf.Log {
-				line := []string{strconv.FormatFloat(throughput, 'f', 5, 64),
-					strconv.FormatFloat(backoff, 'f', 5, 64),
-					strconv.FormatFloat(streamer.ChannelUpdates.Value.(float64), 'f', 5, 64),
-					strconv.Itoa(len(taxiupdates))}
-				writer.Write(line)
-			}
+				if conf.Log {
+					line := []string{strconv.FormatFloat(throughput, 'f', 5, 64),
+						strconv.FormatFloat(backoff, 'f', 5, 64),
+						strconv.FormatFloat(streamer.ChannelUpdates.Value.(float64), 'f', 5, 64),
+						strconv.Itoa(len(taxiupdates))}
+					writer.Write(line)
+				}
 
-			// If we exhaust the channel, reset to the target speed.
-			if len(taxiupdates) == 0 {
-				backoff = 1000000000.0 / conf.TargetSpeedPerSecond
-				streamer.ChannelUpdates = ring.New(1000)
-				reset = true
-			}
-			if backoff > 0 {
-				time.Sleep(time.Duration(backoff) * time.Nanosecond)
+				// If we exhaust the channel, reset to the target speed.
+				if len(taxiupdates) == 0 {
+					backoff = 1000000000.0 / conf.TargetSpeedPerSecond
+					streamer.ChannelUpdates = ring.New(1000)
+					reset = true
+				}
+				if backoff > 0 {
+					time.Sleep(time.Duration(backoff) * time.Nanosecond)
+				}
 			}
 		}
 	}()

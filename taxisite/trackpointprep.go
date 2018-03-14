@@ -10,6 +10,7 @@ import (
 	"github.com/twpayne/go-polyline"
 	"strings"
 	"encoding/json"
+	"math/rand"
 )
 
 // The trackpoint preparation component constantly retrieves routes from a database,
@@ -26,13 +27,31 @@ type TrackpointPrepper struct {
 
 // A route as it is stored in the database.
 type Route struct {
-	Id             int64
-	TaxiId         int32
-	PuTime         time.Time
-	DoTime         time.Time
-	PassengerCount int32
-	Distance       float64
-	Geometry       string
+	Id     int64
+	TaxiId int32
+	PuTime time.Time
+	DoTime time.Time
+
+	PassengerCount       int32
+	Distance             float64
+	Duration             float64
+	FareAmount           float64
+	Extra                float64
+	MTATax               float64
+	TipAmount            float64
+	TollsAmount          float64
+	EHailFee             float64
+	ImprovementSurcharge float64
+	TotalAmount          float64
+	PaymentType          int32
+	TripType             int32
+
+	Geometry string
+
+	StartLon float64
+	StartLat float64
+	EndLon   float64
+	EndLat   float64
 }
 
 // A taxi location update that is serialized as JSON and sent to interested parties.
@@ -64,8 +83,20 @@ type TaxiReservationUpdate struct {
 
 // When a taxi finishes serving a route, its price is sent.
 type TaxiRouteCompletedUpdate struct {
-	TaxiId int32   `json:"taxiId"`
-	Price  float64 `json:"price"`
+	TaxiId               int32   `json:"taxiId"`
+	PassengerCount       int32   `json:"passengerCount"`
+	Distance             float64 `json:"tripDistance"`
+	Duration             float64 `json:"tripDuration"`
+	FareAmount           float64 `json:"fareAmount"`
+	Extra                float64 `json:"extra"`
+	MTATax               float64 `json:"mtaTax"`
+	TipAmount            float64 `json:"tipAmount"`
+	TollsAmount          float64 `json:"tollsAmount"`
+	EHailFee             float64 `json:"ehailFee"`
+	ImprovementSurcharge float64 `json:"improvementSurcharge"`
+	TotalAmount          float64 `json:"totalAmount"`
+	PaymentType          int32   `json:"paymentType"`
+	TripType             int32   `json:"tripType"`
 }
 
 // Sets up the connection to the database.
@@ -86,7 +117,10 @@ func connectToDatabase(conf base.Configuration) *sql.DB {
 // Gets the simulated routes from PostGIS.
 func getRoutes(windowStart time.Time, windowEnd time.Time, ids []int64, db *sql.DB) []Route {
 	rows, err := db.Query("SELECT id, taxi_id, pickup_time, dropoff_time, passenger_count, "+
-		"trip_distance, ST_AsEncodedPolyline(geometry) "+
+		"trip_distance, trip_duration, fare_amount, extra, mta_tax, tip_amount, tolls_amount, ehail_fee, "+
+		"improvement_surcharge, total_amount, payment_type, trip_type, ST_AsEncodedPolyline(geometry), "+
+		"ST_X(ST_StartPoint(geometry)), ST_Y(ST_StartPoint(geometry)), "+
+		"ST_X(ST_EndPoint(geometry)), ST_Y(ST_EndPoint(geometry)) "+
 		"FROM taxi_routes WHERE dropoff_time > $1 AND pickup_time < $2 AND id <> ALL ($3)",
 		windowStart, windowEnd, pq.Int64Array(ids))
 	defer rows.Close()
@@ -99,7 +133,10 @@ func getRoutes(windowStart time.Time, windowEnd time.Time, ids []int64, db *sql.
 	for rows.Next() {
 		route := Route{}
 		err := rows.Scan(&route.Id, &route.TaxiId, &route.PuTime, &route.DoTime, &route.PassengerCount,
-			&route.Distance, &route.Geometry)
+			&route.Distance, &route.Duration, &route.FareAmount, &route.Extra, &route.MTATax, &route.TipAmount,
+			&route.TollsAmount, &route.EHailFee, &route.ImprovementSurcharge, &route.TotalAmount,
+			&route.PaymentType, &route.TripType, &route.Geometry, &route.StartLon, &route.StartLat,
+			&route.EndLon, &route.EndLat)
 		if err != nil {
 			fmt.Println("Error (parsing route data):", err)
 		}
@@ -153,14 +190,40 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 
 			for _, r := range trackpointPrepper.Routes {
 				// Check if this route just started now. If so, we have to create an occupancy message.
+				// If it's a route with passengers, a destination message has to be added too.
 				if r.PuTime.After(timeSlice) && r.PuTime.Before(sliceEnd) {
 					// This is a new route, we have to generate an occupancy message.
 					b, _ := json.Marshal(TaxiOccupancyUpdate{r.TaxiId, r.PassengerCount})
+					updates = append(updates, b)
+
+					if r.PassengerCount > 0 {
+						b, _ := json.Marshal(TaxiDestinationUpdate{r.TaxiId, r.EndLon, r.EndLat})
+						updates = append(updates, b)
+					}
+				}
+
+				// Check if this route is just stopping now. If so, we have to send the journey (esp. price) information.
+				if r.DoTime.After(timeSlice) && r.DoTime.Before(sliceEnd) {
+					b, _ := json.Marshal(TaxiRouteCompletedUpdate{r.TaxiId, r.PassengerCount,
+						r.Distance, r.Duration, r.FareAmount, r.Extra,
+						r.MTATax, r.TipAmount, r.TollsAmount, r.EHailFee,
+						r.ImprovementSurcharge, r.TotalAmount, r.PaymentType,
+						r.TripType})
+					updates = append(updates, b)
+				}
+
+				// In some rare cases, the taxi gets ordered to the pickup location (let's say by a reservation call).
+				// Optimally, the simulator would already generate these events...
+				// For now, we do this approx. for one taxi every 10 seconds.
+				if r.PassengerCount == 0 && rand.Float64() < 1.0 /
+					(10000000000.0/float64(timeInc.Nanoseconds())*float64(len(trackpointPrepper.Routes))) {
+					b, _ := json.Marshal(TaxiReservationUpdate{r.TaxiId, r.EndLon, r.EndLat})
 					updates = append(updates, b)
 				}
 
 				// In any case, we want to generate some location updates.
 				// TODO Auf UNIX / Mac scheint es anders kodiert zu sein, d.h. das strings Replace ist nicht nötig.
+				// TODO Auf Ubuntu geht es so (gleich wie Windows).
 				// coords, _, err := polyline.DecodeCoords([]byte(r.Geometry))
 				coords, _, err := polyline.DecodeCoords([]byte(strings.Replace(r.Geometry, "\\\\", "\\", -1)))
 				if err != nil {

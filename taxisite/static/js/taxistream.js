@@ -29,6 +29,17 @@ $(function () {
         return color;
     }
 
+    function getTaxiColor(status) {
+        switch (status) {
+            case "empty":
+                return "#FFFFFF"; // white
+            case "reserved":
+                return "#FF971A"; // orange
+            case "occupied":
+                return "#FF2708"; // red
+        }
+    }
+
     function hexToRGB(hex, alpha) {
         var r = parseInt(hex.slice(1, 3), 16),
             g = parseInt(hex.slice(3, 5), 16),
@@ -41,12 +52,25 @@ $(function () {
         }
     }
 
+    function createNewTaxi(id) {
+        return {
+            taxiId: id,
+            status: "empty",
+            color: getTaxiColor("empty"),
+            lon: 0.0,
+            lat: 0.0,
+            numOccupants: 0
+        }
+    }
+
     taxiData = {
         0: {
             taxiId: 0,
-            color: getRandomColor(),
+            status: "empty",
+            color: getTaxiColor("empty"),
             lon: -73.969242,
-            lat: 40.730610
+            lat: 40.730610,
+            numOccupants: 0
         }
     };
 
@@ -70,7 +94,8 @@ $(function () {
                 for (var id in taxiData) {
                     var data = taxiData[id];
                     var point = info.layer._map.latLngToContainerPoint([data.lat, data.lon]);
-                    renderCircle(ctx, point, hexToRGB(data.color, 0.5), hexToRGB(data.color, 0.9), 5.0);
+                    var color = getTaxiColor(data.status);
+                    renderCircle(ctx, point, hexToRGB(color, 0.5), hexToRGB(color, 0.9), 5.0);
                 }
             }
         });
@@ -92,19 +117,26 @@ $(function () {
         };
         socket.onmessage = function (e) {
             var data = JSON.parse(e.data);
+            if (!(data["taxiId"] in taxiData)) {
+                taxiData[data["taxiId"]] = createNewTaxi(data["taxiId"]);
+            }
             if ("lon" in data && "lat" in data) {
-                if (!(data["taxiId"] in taxiData)) {
-                    taxiData[data["taxiId"]] = {
-                        taxiId: data["taxiId"],
-                        color: getRandomColor(),
-                        lon: 0.0,
-                        lat: 0.0
-                    }
-                }
                 taxiData[data["taxiId"]].lon = data["lon"];
                 taxiData[data["taxiId"]].lat = data["lat"];
-                taxiLayer.needRedraw();
             }
+            if ("numOccupants" in data) {
+                taxiData[data["taxiId"]].numOccupants = data["numOccupants"];
+                if (data["numOccupants"] > 0) {
+                    taxiData[data["taxiId"]].status = "occupied";
+                }
+            }
+            if ("reservationLon" in data && "reservationLat" in data) {
+                taxiData[data["taxiId"]].status = "reserved";
+            }
+            if ("totalAmount" in data) {
+                taxiData[data["taxiId"]].status = "empty";
+            }
+            taxiLayer.needRedraw();
         };
         socket.onclose = function () {
             container.append("<p>Socket closed</p>");
