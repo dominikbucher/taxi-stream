@@ -85,7 +85,7 @@ $(function () {
     }
 
     function initWS() {
-        var socket = new WebSocket("ws://localhost:8080/ws"),
+        var socket = new WebSocket("ws://" + window.location.hostname + ":8080/ws"),
             container = $("#container");
         socket.onopen = function () {
             container.append("<p>Socket is open</p>");
