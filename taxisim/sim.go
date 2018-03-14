@@ -99,6 +99,10 @@ func processRoute(puTime time.Time, puLon float64, puLat float64, doTime time.Ti
 
 		// If the time to drive from the current position to the pickup location of the taxi is very large,
 		// we simply let this taxi drive around a bit.
+		// TODO Actually, we should check if the random movement leads to an overshoot (timewise), i.e., the random
+		// TODO movement leads to an arrival time after the actual route (from the NYC taxidata) starts.
+		// TODO This is resolved by simply setting the dropoff time of the last segment to the pickup time of the
+		// TODO route from the dataset.
 		for timeBudget > drivingDurationHigh {
 			simulator.TaxiMovements = append(simulator.TaxiMovements, createRandomTaxiMovement(*taxi))
 
@@ -112,8 +116,8 @@ func processRoute(puTime time.Time, puLon float64, puLat float64, doTime time.Ti
 
 		// Once it is close enough, route to the route pickup location.
 		simulator.TaxiMovements = append(simulator.TaxiMovements,
-			TaxiMovement{taxi.Id, taxi.Time, drivingRoute.DoTime, free, 0,
-				drivingRoute.Distance, drivingRoute.DoTime.Sub(drivingRoute.PuTime).Seconds(),
+			TaxiMovement{taxi.Id, taxi.Time, route.PuTime, free, 0,
+				drivingRoute.Distance, route.PuTime.Sub(drivingRoute.PuTime).Seconds(),
 				0, 0, 0, 0, 0, 0, 0, 0,
 				-1, -1, drivingRoute.Geometry})
 	}
