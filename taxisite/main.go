@@ -3,7 +3,6 @@ package taxisite
 import (
 	"net/http"
 	"github.com/gorilla/websocket"
-	"strings"
 	"taxistream/base"
 	"log"
 )
@@ -22,10 +21,10 @@ func ExposeEndpoints(conf base.Configuration) {
 
 // Upgrades a connection to WebSockets.
 func wsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Origin") != "http://"+r.Host && !strings.Contains(r.Host, "localhost") {
+	/*if r.Header.Get("Origin") != "http://"+r.Host && !strings.Contains(r.Host, "localhost") {
 		http.Error(w, "Origin not allowed", 403)
 		return
-	}
+	}*/
 	conn, err := websocket.Upgrade(w, r, w.Header(), 1024, 1024)
 	if err != nil {
 		http.Error(w, "Could not open websocket connection", http.StatusBadRequest)

@@ -8,7 +8,7 @@ import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 
 public class WebSocketReceiver extends Receiver<String> implements Runnable {
-    String url = "ws://localhost:8080/ws";
+    String url = "ws://129.132.127.249:8080/ws";
 
     private Thread thread = null;
     private WebSocketClient client = null;
