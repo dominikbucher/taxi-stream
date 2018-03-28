@@ -76,6 +76,15 @@ $(function () {
         }
     };
 
+    clientRequest = {
+        clientId: 0,
+        origLon: 0,
+        origLat: 0,
+        destLon: 0,
+        destLat: 0,
+        willShare: false
+    };
+
     function renderCircle(ctx, point, fillStyle, strokeStyle, radius) {
         ctx.fillStyle = fillStyle;
         ctx.strokeStyle = strokeStyle;
@@ -92,6 +101,7 @@ $(function () {
                 var ctx = info.canvas.getContext('2d');
                 ctx.clearRect(0, 0, info.canvas.width, info.canvas.height);
                 ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+                ctx.lineWidth = 1;
                 ctx.fillRect(0, 0, info.canvas.width, info.canvas.height);
                 for (var id in taxiData) {
                     var data = taxiData[id];
@@ -104,16 +114,30 @@ $(function () {
                         ctx.fillText(data.taxiId, point.x + 7.5, point.y + 3);
                     }
                 }
+
+                ctx.strokeStyle = "#8888FF";
+                ctx.lineWidth = 4;
+                ctx.lineCap = "round";
+                ctx.beginPath();
+                var origPoint = info.layer._map.latLngToContainerPoint([clientRequest.origLat, clientRequest.origLon]);
+                var destPoint = info.layer._map.latLngToContainerPoint([clientRequest.destLat, clientRequest.destLon]);
+                ctx.moveTo(origPoint.x, origPoint.y);
+                ctx.lineTo(destPoint.x, destPoint.y);
+                ctx.stroke();
+                ctx.lineWidth = 1;
+                renderCircle(ctx, origPoint, hexToRGB("#4444FF", 0.5), hexToRGB("#4444FF", 0.9), 8.0);
             }
         });
     taxiLayer.addTo(map);
 
     var ws;
+    var clientWs;
     if (window.WebSocket === undefined) {
         $("#container").append("Your browser does not support WebSockets");
         return;
     } else {
         ws = initWS();
+        clientWs = initClientWS();
     }
 
     function initWS() {
@@ -147,6 +171,20 @@ $(function () {
         };
         socket.onclose = function () {
             container.append("<p>Socket closed</p>");
+        };
+        return socket;
+    }
+
+    function initClientWS() {
+        var socket = new WebSocket("ws://" + window.location.hostname + ":8080/ws-clients");
+        socket.onmessage = function (e) {
+            var data = JSON.parse(e.data);
+            clientRequest['clientId'] = data['clientId'];
+            clientRequest['origLon'] = data['origLon'];
+            clientRequest['origLat'] = data['origLat'];
+            clientRequest['destLon'] = data['destLon'];
+            clientRequest['destLat'] = data['destLat'];
+            clientRequest['willShare'] = data['willShare'];
         };
         return socket;
     }

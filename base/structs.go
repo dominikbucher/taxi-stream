@@ -7,6 +7,9 @@ type Configuration struct {
 	NumTaxis  int32
 	MaxRoutes int32
 
+	MaxClients           int
+	ClientRequestsPerSec float64
+
 	TargetSpeedPerSecond     float64
 	TrackpointPrepWindowSize float64
 	TimeWarp                 float64

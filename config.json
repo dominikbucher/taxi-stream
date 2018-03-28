@@ -4,8 +4,11 @@
   "taxiData": [
     "data/green_tripdata_2016-01.csv"
   ],
-  "numTaxis": 6000,
-  "maxRoutes": 10000,
+  "numTaxis": 5,
+  "maxRoutes": 30000,
+
+  "maxClients": 100,
+  "clientRequestsPerSec": 0.4,
 
   "targetSpeedPerSecond": 3000,
   "trackpointPrepWindowSize": 5,
