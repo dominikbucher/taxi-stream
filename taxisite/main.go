@@ -87,7 +87,9 @@ func wsHandlerClients(w http.ResponseWriter, r *http.Request) {
 	clientRequestStreamer.WebsocketChannel[conn] = true
 	log.Println("Serving", len(clientRequestStreamer.WebsocketChannel), "client sockets.")
 	go handleWsClients(conn)
-	go writeOccasionalClientRequest(clientRequestStreamer)
+	if len(clientRequestStreamer.WebsocketChannel) == 1 {
+		go writeOccasionalClientRequest(clientRequestStreamer)
+	} // Otherwise this already runs.
 }
 
 // Handles a websocket, in particular, closes it after the client goes offline.
@@ -149,7 +151,9 @@ func writeOccasionalClientRequest(clientRequestStreamer *ClientRequestStreamer) 
 			for c := range clientRequestStreamer.WebsocketChannel {
 				c.WriteMessage(websocket.TextMessage, msg)
 			}
+		} else {
+			return
 		}
-		time.Sleep(time.Duration(1000000000.0 / clientRequestStreamer.ClientRequestsPerSec) * time.Nanosecond)
+		time.Sleep(time.Duration(1000000000.0/clientRequestStreamer.ClientRequestsPerSec) * time.Nanosecond)
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/lib/pq"
 	"taxistream/taxisim"
 	"github.com/twpayne/go-polyline"
-	"strings"
 	"encoding/json"
 	"math/rand"
 )
@@ -20,9 +19,10 @@ import (
 // prices, ratings, destinations, fuel and motor status, and also non-taxi events
 // such as transport requests, congestion updates, etc. might be added.
 type TrackpointPrepper struct {
-	WindowStart time.Time
-	WindowEnd   time.Time
-	Routes      []Route
+	WindowStart   time.Time
+	WindowEnd     time.Time
+	Routes        []Route
+	ReservedTaxis map[int32]bool
 }
 
 // A route as it is stored in the database.
@@ -59,19 +59,28 @@ type TaxiUpdate struct {
 	TaxiId int32   `json:"taxiId"`
 	Lon    float64 `json:"lon"`
 	Lat    float64 `json:"lat"`
+
+	NumOccupants   int32    `json:"numOccupants"`
+	DestLon        *float64 `json:"destLon"`
+	DestLat        *float64 `json:"destLat"`
+	ReservationLon *float64 `json:"reservationLon"`
+	ReservationLat *float64 `json:"reservationLat"`
 }
 
 // A taxi occupancy update.
 type TaxiOccupancyUpdate struct {
-	TaxiId       int32 `json:"taxiId"`
-	NumOccupants int32 `json:"numOccupants"`
+	TaxiId       int32   `json:"taxiId"`
+	NumOccupants int32   `json:"numOccupants"`
+	DestLon      float64 `json:"destLon"`
+	DestLat      float64 `json:"destLat"`
 }
 
 // Updates where a taxi will travel to (when it gets booked).
 type TaxiDestinationUpdate struct {
-	TaxiId  int32   `json:"taxiId"`
-	DestLon float64 `json:"destLon"`
-	DestLat float64 `json:"destLat"`
+	TaxiId       int32   `json:"taxiId"`
+	NumOccupants int32   `json:"numOccupants"`
+	DestLon      float64 `json:"destLon"`
+	DestLat      float64 `json:"destLat"`
 }
 
 // Update when a taxi receives a reservation.
@@ -177,7 +186,7 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 	trackpointPrepper.Routes = newRoutes
 	fmt.Println("TrackpointPrepper.Routes.len:", len(trackpointPrepper.Routes))
 
-	if len(trackpointPrepper.Routes) > 0 {
+	if len(trackpointPrepper.Routes) > int(conf.NumTaxis / 10) {
 		// Create updates for all taxis. First, compute how many updates we need to reach the target speed.
 		numUpdates := windowSize * targetSpeed
 		numTimeSlices := numUpdates / float64(len(trackpointPrepper.Routes))
@@ -193,13 +202,14 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 				// If it's a route with passengers, a destination message has to be added too.
 				if r.PuTime.After(timeSlice) && r.PuTime.Before(sliceEnd) {
 					// This is a new route, we have to generate an occupancy message.
-					b, _ := json.Marshal(TaxiOccupancyUpdate{r.TaxiId, r.PassengerCount})
-					updates = append(updates, b)
+					// Since we include all messages in both streams, here we kinda redundantly send both messages.
+					o, _ := json.Marshal(TaxiOccupancyUpdate{r.TaxiId, r.PassengerCount,
+						r.EndLon, r.EndLat})
+					updates = append(updates, o)
 
-					if r.PassengerCount > 0 {
-						b, _ := json.Marshal(TaxiDestinationUpdate{r.TaxiId, r.EndLon, r.EndLat})
-						updates = append(updates, b)
-					}
+					b, _ := json.Marshal(TaxiDestinationUpdate{r.TaxiId, r.PassengerCount,
+						r.EndLon, r.EndLat})
+					updates = append(updates, b)
 				}
 
 				// Check if this route is just stopping now. If so, we have to send the journey (esp. price) information.
@@ -210,6 +220,7 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 						r.ImprovementSurcharge, r.TotalAmount, r.PaymentType,
 						r.TripType})
 					updates = append(updates, b)
+					delete(trackpointPrepper.ReservedTaxis, r.TaxiId)
 				}
 
 				// In some rare cases, the taxi gets ordered to the pickup location (let's say by a reservation call).
@@ -217,6 +228,7 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 				// For now, we do this approx. for one taxi every 10 seconds.
 				if r.PassengerCount == 0 && rand.Float64() < 1.0 /
 					(10000000000.0/float64(timeInc.Nanoseconds())*float64(len(trackpointPrepper.Routes))) {
+					trackpointPrepper.ReservedTaxis[r.TaxiId] = true
 					b, _ := json.Marshal(TaxiReservationUpdate{r.TaxiId, r.EndLon, r.EndLat})
 					updates = append(updates, b)
 				}
@@ -224,8 +236,8 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 				// In any case, we want to generate some location updates.
 				// TODO Auf UNIX / Mac scheint es anders kodiert zu sein, d.h. das strings Replace ist nicht nötig.
 				// TODO Auf Ubuntu geht es so (gleich wie Windows).
-				// coords, _, err := polyline.DecodeCoords([]byte(r.Geometry))
-				coords, _, err := polyline.DecodeCoords([]byte(strings.Replace(r.Geometry, "\\\\", "\\", -1)))
+				coords, _, err := polyline.DecodeCoords([]byte(r.Geometry))
+				// coords, _, err := polyline.DecodeCoords([]byte(strings.Replace(r.Geometry, "\\\\", "\\", -1)))
 				if err != nil {
 					panic(err)
 				}
@@ -233,8 +245,21 @@ func prepTrackpoints(trackpointPrepper *TrackpointPrepper, streamer *Streamer, d
 				if perc > 0 && perc < 1 {
 					lon, lat := taxisim.AlongPolyline(taxisim.PolylineLength(coords)*perc, coords)
 					if streamer.TaxiupdateChannel != nil {
-						b, _ := json.Marshal(TaxiUpdate{r.TaxiId, lon, lat})
-						updates = append(updates, b)
+						var resLon *float64
+						var resLat *float64
+						if trackpointPrepper.ReservedTaxis[r.TaxiId] {
+							resLon = &r.EndLon
+							resLat = &r.EndLat
+						}
+						if r.PassengerCount > 0 {
+							b, _ := json.Marshal(TaxiUpdate{r.TaxiId, lon, lat,
+								r.PassengerCount, &r.EndLon, &r.EndLat, resLon, resLat})
+							updates = append(updates, b)
+						} else {
+							b, _ := json.Marshal(TaxiUpdate{r.TaxiId, lon, lat,
+								r.PassengerCount, nil, nil, resLon, resLat})
+							updates = append(updates, b)
+						}
 					}
 				}
 			}
@@ -274,7 +299,7 @@ func setUpTrackpointPrep(conf base.Configuration, streamer Streamer) {
 	trackpointPrepper := TrackpointPrepper{
 		time.Date(2016, time.January, 1, 0, 29, 20, 0, time.UTC),
 		time.Date(2016, time.January, 1, 0, 29, int(20+windowSize*conf.TimeWarp), 0, time.UTC),
-		make([]Route, 0)}
+		make([]Route, 0), make(map[int32]bool)}
 
 	ticker := time.NewTicker(time.Duration(windowSize) * time.Second)
 	quit := make(chan struct{})

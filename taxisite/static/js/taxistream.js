@@ -161,7 +161,8 @@ $(function () {
                     taxiData[data["taxiId"]].status = "occupied";
                 }
             }
-            if ("reservationLon" in data && "reservationLat" in data) {
+            if ("reservationLon" in data && "reservationLat" in data &&
+                data["reservationLon"] !== null && data["reservationLat"] !== null) {
                 taxiData[data["taxiId"]].status = "reserved";
             }
             if ("totalAmount" in data) {

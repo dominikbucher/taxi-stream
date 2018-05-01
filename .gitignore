@@ -22,3 +22,4 @@
 /spark-taxi-processor/SparkTaxiProcessor.iml
 /spark-taxi-processor/target
 .ipynb_checkpoints
+/taxi-stream-tests/node_modules
