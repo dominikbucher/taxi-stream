@@ -8,6 +8,7 @@ import (
 	"time"
 	"encoding/json"
 	"math/rand"
+	"strconv"
 )
 
 var streamer *Streamer = nil
@@ -30,7 +31,7 @@ func ExposeEndpoints(conf base.Configuration) {
 	http.Handle("/", http.FileServer(http.Dir("./taxisite/static")))
 	http.HandleFunc("/ws", wsHandler)
 	http.HandleFunc("/ws-clients", wsHandlerClients)
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":" + strconv.Itoa(conf.WebSocketPort), nil)
 }
 
 // Upgrades a connection to WebSockets.

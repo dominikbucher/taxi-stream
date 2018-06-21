@@ -10,9 +10,11 @@
   "maxClients": 100,
   "clientRequestsPerSec": 0.4,
 
-  "targetSpeedPerSecond": 3000,
+  "targetSpeedPerSecond": 500,
   "trackpointPrepWindowSize": 5,
   "timeWarp": 60,
+
+  "webSocketPort": 8082,
 
   "log": false,
 

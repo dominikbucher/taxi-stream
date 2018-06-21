@@ -3,6 +3,8 @@ $(function () {
         $('#overlay').show();
     }
 
+    var websocketPort = 8082;
+
     var showTaxiIds = false;
 
     var map = L.map('map').setView([40.730610, -73.969242], 13);
@@ -141,7 +143,7 @@ $(function () {
     }
 
     function initWS() {
-        var socket = new WebSocket("ws://" + window.location.hostname + ":8080/ws"),
+        var socket = new WebSocket("ws://" + window.location.hostname + ":" + websocketPort + "/ws"),
             container = $("#container");
         socket.onopen = function () {
             container.append("<p>Socket is open</p>");
@@ -177,7 +179,7 @@ $(function () {
     }
 
     function initClientWS() {
-        var socket = new WebSocket("ws://" + window.location.hostname + ":8080/ws-clients");
+        var socket = new WebSocket("ws://" + window.location.hostname + ":" + websocketPort + "/ws-clients");
         socket.onmessage = function (e) {
             var data = JSON.parse(e.data);
             clientRequest['clientId'] = data['clientId'];

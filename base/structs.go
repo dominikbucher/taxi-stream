@@ -14,6 +14,8 @@ type Configuration struct {
 	TrackpointPrepWindowSize float64
 	TimeWarp                 float64
 
+	WebSocketPort int
+
 	Log bool
 
 	DbUser     string
