@@ -16,6 +16,9 @@
 
   "webSocketPort": 8082,
 
+  "TCPStream": true,
+  "TCPPort": 8083,
+
   "log": false,
 
   "dbUser": "dobucher",

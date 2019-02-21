@@ -2,6 +2,7 @@ package taxisite
 
 import (
 	"container/ring"
+	"net"
 	"taxistream/base"
 	"github.com/gorilla/websocket"
 	"time"
@@ -16,6 +17,7 @@ import (
 // and pushes them out to interested parties.
 type Streamer struct {
 	WebsocketChannel  map[*websocket.Conn]bool
+	TCPChannel map[*net.Conn]bool
 	TaxiupdateChannel *chan []byte
 	ChannelUpdates    *ring.Ring
 }
@@ -36,9 +38,11 @@ func ringAverage(ring *ring.Ring) float64 {
 // Sets up the streamer and lets it listen to potential updates on a channel.
 func setUpStreamer(conf base.Configuration) *Streamer {
 	websocketChannels := make(map[*websocket.Conn]bool, 0)
+	tcpChannels := make(map[*net.Conn]bool, 0)
 	taxiupdates := make(chan []byte, int32(conf.TargetSpeedPerSecond*conf.TrackpointPrepWindowSize*2))
 	channelUpdates := ring.New(100)
-	streamer := Streamer{websocketChannels, &taxiupdates, channelUpdates}
+	streamer := Streamer{websocketChannels, tcpChannels,
+		&taxiupdates, channelUpdates}
 
 	throughput := conf.TargetSpeedPerSecond
 	backoff := 30.0 //1000000000.0 / conf.TargetSpeedPerSecond
@@ -67,6 +71,11 @@ func setUpStreamer(conf base.Configuration) *Streamer {
 				if len(streamer.WebsocketChannel) > 0 {
 					for c := range streamer.WebsocketChannel {
 						c.WriteMessage(websocket.TextMessage, u)
+					}
+				}
+				if len(streamer.TCPChannel) > 0 {
+					for c := range streamer.TCPChannel {
+						(*c).Write([]byte(append(u, []byte("\n")...)))
 					}
 				}
 				if reset {

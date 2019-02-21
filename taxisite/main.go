@@ -1,14 +1,17 @@
 package taxisite
 
 import (
-	"net/http"
-	"github.com/gorilla/websocket"
-	"taxistream/base"
-	"log"
-	"time"
 	"encoding/json"
+	"fmt"
+	"github.com/gorilla/websocket"
+	"log"
 	"math/rand"
+	"net"
+	"net/http"
+	"os"
 	"strconv"
+	"taxistream/base"
+	"time"
 )
 
 var streamer *Streamer = nil
@@ -31,7 +34,29 @@ func ExposeEndpoints(conf base.Configuration) {
 	http.Handle("/", http.FileServer(http.Dir("./taxisite/static")))
 	http.HandleFunc("/ws", wsHandler)
 	http.HandleFunc("/ws-clients", wsHandlerClients)
-	http.ListenAndServe(":" + strconv.Itoa(conf.WebSocketPort), nil)
+
+	if conf.TCPStream {
+		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(conf.TCPPort))
+		if err != nil {
+			fmt.Println("Error listening:", err.Error())
+			os.Exit(1)
+		}
+		// Close the listener when the application closes.
+		defer l.Close()
+		fmt.Println("Listening for TCP connections on 127.0.0.1:"+strconv.Itoa(conf.TCPPort))
+		for {
+			// Listen for an incoming connection.
+			conn, err := l.Accept()
+			if err != nil {
+				fmt.Println("Error accepting: ", err.Error())
+				os.Exit(1)
+			}
+			// Handle connections in a new goroutine.
+			go handleTCPRequest(conn)
+		}
+	}
+
+	http.ListenAndServe(":"+strconv.Itoa(conf.WebSocketPort), nil)
 }
 
 // Upgrades a connection to WebSockets.
@@ -74,6 +99,26 @@ func handleWs(conn *websocket.Conn) {
 			log.Println(err)
 			return
 		}
+	}
+}
+
+// Listens to TCP requests.
+func handleTCPRequest(conn net.Conn) {
+	fmt.Println("Serving", len(streamer.TCPChannel), "TCP sockets.")
+	streamer.TCPChannel[&conn] = true
+	// Make a buffer to hold incoming data.
+	buf := make([]byte, 1024)
+	// Read the incoming connection into the buffer.
+	defer conn.Close()
+	for {
+		_, err := conn.Read(buf)
+		if err != nil {
+			fmt.Println("Error reading:", err.Error())
+			streamer.TCPChannel[&conn] = false
+			break
+		}
+		// Send a response back to person contacting us.
+		conn.Write([]byte("Message received."))
 	}
 }
 

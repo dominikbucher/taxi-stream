@@ -16,6 +16,9 @@ type Configuration struct {
 
 	WebSocketPort int
 
+	TCPStream bool
+	TCPPort int
+
 	Log bool
 
 	DbUser     string
